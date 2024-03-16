@@ -1,3 +1,7 @@
+# 2.0.0
+
+- Upgrades action to Node 20
+
 # [1.6.0](https://github.com/voxmedia/github-action-slack-notify-build/compare/v1.5.0...v1.6.0) (2023-01-03)
 
 ### Features
