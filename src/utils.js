@@ -1,4 +1,5 @@
 const { context } = require("@actions/github");
+const { Octokit } = require("@octokit/rest");
 
 async function getLinearTicketInfo(linearClient, branch) {
   const ticketIdMatch = branch.match(/^([a-zA-Z]+-\d+)/);
@@ -20,55 +21,192 @@ async function getLinearTicketInfo(linearClient, branch) {
   }
 }
 
+async function getCurrentDeployment(octokit, owner, repo, environment) {
+  try {
+    const { data: deployments } = await octokit.repos.listDeployments({
+      owner,
+      repo,
+      environment,
+      per_page: 100,
+    });
+
+    const successfulDeployments = [];
+
+    // make this work even if there were reruns of the deployment
+    for (const deployment of deployments) {
+      const { data: statuses } = await octokit.repos.listDeploymentStatuses({
+        owner,
+        repo,
+        deployment_id: deployment.id,
+        per_page: 10,
+      });
+
+      if (statuses.some((status) => status.state === "success")) {
+        successfulDeployments.push(deployment);
+      }
+    }
+
+    if (successfulDeployments.length > 0) {
+      return successfulDeployments.sort(
+        (a, b) => new Date(b.created_at) - new Date(a.created_at),
+      )[0];
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error fetching current deployment: ${error.message}`);
+    return null;
+  }
+}
+
+async function getCommitsBetween(octokit, owner, repo, base, head) {
+  try {
+    const { data: comparison } = await octokit.repos.compareCommits({
+      owner,
+      repo,
+      base,
+      head,
+    });
+
+    return comparison.commits.filter((commit) => commit.parents.length === 1);
+  } catch (error) {
+    console.error(
+      `Error fetching commits between ${base} and ${head}: ${error.message}`,
+    );
+    return [];
+  }
+}
+
+async function getPRsForCommits(
+  octokit,
+  owner,
+  repo,
+  commits,
+  linearClient,
+  defaultBranchName,
+) {
+  const prs = new Set();
+
+  for (const commit of commits) {
+    try {
+      const { data: pullRequests } =
+        await octokit.repos.listPullRequestsAssociatedWithCommit({
+          owner,
+          repo,
+          commit_sha: commit.sha,
+        });
+
+      for (const pr of pullRequests) {
+        if (pr.base.ref === defaultBranchName) {
+          const linearTicketInfos = [];
+          const branchTicketInfo = await getLinearTicketInfo(
+            linearClient,
+            pr.head.ref,
+          );
+          if (branchTicketInfo) linearTicketInfos.push(branchTicketInfo);
+
+          const titleAndBodyText = `${pr.title} ${pr.body}`;
+          const ticketIdMatches =
+            titleAndBodyText.match(/[a-zA-Z]+-\d+/g) || [];
+
+          for (const ticketId of ticketIdMatches) {
+            const additionalTicketInfo = await getLinearTicketInfo(
+              linearClient,
+              ticketId,
+            );
+            if (
+              additionalTicketInfo &&
+              additionalTicketInfo.id !== branchTicketInfo?.id
+            )
+              linearTicketInfos.push(additionalTicketInfo);
+          }
+
+          prs.add({
+            number: pr.number,
+            title: pr.title,
+            url: pr.html_url,
+            user: pr.user,
+            linearTickets: linearTicketInfos,
+          });
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error fetching PRs for commit ${commit.sha}: ${error.message}`,
+      );
+    }
+  }
+
+  return Array.from(prs);
+}
+
+function calculateEnvironmentName(environment) {
+  return environment.toLowerCase().includes("qa")
+    ? "QA"
+    : environment.toLowerCase().includes("prod")
+      ? `:warning: PROD :warning:`
+      : environment.toUpperCase();
+}
+
 async function buildSlackAttachments({
   status,
   color,
   github,
   linearClient,
   environment,
+  defaultBranchName,
+  serviceName,
 }) {
-  const { payload, ref, eventName } = github.context;
   const { owner, repo } = context.repo;
-  const event = eventName;
-  const branch =
-    event === "pull_request"
-      ? payload.pull_request.head.ref
-      : ref.replace("refs/heads/", "");
+  const octokit = new Octokit({ auth: github.token });
 
-  const linearTicketInfo = await getLinearTicketInfo(linearClient, branch);
+  const currentDeployment = await getCurrentDeployment(
+    octokit,
+    owner,
+    repo,
+    environment,
+  );
 
-  const sha =
-    event === "pull_request"
-      ? payload.pull_request.head.sha
-      : github.context.sha;
+  const newSha = github.context.sha;
+  let commits = [{ sha: newSha }];
 
-  const referenceLink =
-    event === "pull_request"
-      ? {
-          title: "Pull Request",
-          value: `<${payload.pull_request.html_url} | ${payload.pull_request.title}>`,
-          short: true,
-        }
-      : {
-          title: "Branch",
-          value: `<https://github.com/${owner}/${repo}/commit/${sha} | ${branch}>`,
-          short: true,
-        };
+  if (currentDeployment) {
+    commits = await getCommitsBetween(
+      octokit,
+      owner,
+      repo,
+      currentDeployment.sha,
+      newSha,
+    );
+  }
 
-  const environmentField = {
-    title: "Environment",
-    value:
-      environment.toLowerCase() === "prod"
-        ? `:warning: ${environment} :warning:`
-        : environment,
-    short: true,
-  };
+  const prs = await getPRsForCommits(
+    octokit,
+    owner,
+    repo,
+    commits,
+    linearClient,
+    defaultBranchName,
+  );
 
-  // extract fields into a const
+  // const userIds = new Set(prs.map((pr) => pr.user.id));
+  // const users = await Promise.all(
+  //   Array.from(userIds).map(async (id) => {
+  //     const { data: user } = await octokit.users.getById({ id });
+  //     return { id, name: user.name || user.login };
+  //   }),
+  // );
+  // const userMap = new Map(users.map((user) => [user.id, user.name]));
+
   const fields = [
     {
-      title: "Repo",
-      value: `<https://github.com/${owner}/${repo} | ${repo}>`,
+      title: "Service",
+      value: serviceName,
+      short: true,
+    },
+    {
+      title: "Environment",
+      value: calculateEnvironmentName(environment),
       short: true,
     },
     {
@@ -78,16 +216,43 @@ async function buildSlackAttachments({
     },
   ];
 
-  if (referenceLink) {
-    fields.push(referenceLink);
-  }
+  if (prs.length > 0) {
+    const prLines = prs.flatMap((pr) => {
+      // const userFirstName = pr.user.name.split(" ")[0];
+      if (pr.linearTickets && pr.linearTickets.length > 0) {
+        return pr.linearTickets.map((ticket) => {
+          // return `• *${ticket.id}* - <${ticket.url} | ${ticket.title}> (<${pr.url} | PR>) (${userFirstName})`;
+          return `• *${ticket.id}* - <${ticket.url} | ${ticket.title}> (<${pr.url} | PR>)`;
+        });
+      } else {
+        // return `• *No ticket* - <${pr.url} | ${pr.title}> (${userFirstName})`;
+        return `• *No ticket* - <${pr.url} | ${pr.title}>`;
+      }
+    });
 
-  fields.push(environmentField);
+    const prGroups = prLines.reduce((acc, line, index) => {
+      const groupIndex = Math.floor(index / 8);
+      if (!acc[groupIndex]) {
+        acc[groupIndex] = [];
+      }
+      acc[groupIndex].push(line);
+      return acc;
+    }, []);
 
-  if (linearTicketInfo) {
+    prGroups.forEach((group, index) => {
+      fields.push({
+        title:
+          index === 0
+            ? "Pull Requests and Linear Tickets"
+            : `Pull Requests and Linear Tickets (${index + 1})`,
+        value: group.join("\n"),
+        short: false,
+      });
+    });
+  } else {
     fields.push({
-      title: "Linear Ticket",
-      value: `<${linearTicketInfo.url} | ${linearTicketInfo.id}: ${linearTicketInfo.title}>`,
+      title: "Changes",
+      value: "No pull requests found for this deployment",
       short: false,
     });
   }
@@ -104,9 +269,3 @@ async function buildSlackAttachments({
 }
 
 module.exports.buildSlackAttachments = buildSlackAttachments;
-
-function formatChannelName(channel) {
-  return channel.replace(/[#@]/g, "");
-}
-
-module.exports.formatChannelName = formatChannelName;

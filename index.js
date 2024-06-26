@@ -2,40 +2,34 @@ const core = require("@actions/core");
 const github = require("@actions/github");
 const { WebClient } = require("@slack/web-api");
 const { LinearClient } = require("@linear/sdk");
-const { buildSlackAttachments, formatChannelName } = require("./src/utils");
+const { buildSlackAttachments } = require("./src/utils");
 
 (async () => {
   try {
-    const channel = core.getInput("channel");
     const status = core.getInput("status");
     const color = core.getInput("color");
     const messageId = core.getInput("message_id");
     const environment = core.getInput("environment");
+    const defaultBranchName = core.getInput("default_branch_name");
+    const serviceName = core.getInput("service_name");
     const token = process.env.SLACK_BOT_TOKEN;
     const linearApiKey = process.env.LINEAR_API_KEY;
     const slack = new WebClient(token);
     const linearClient = new LinearClient({ apiKey: linearApiKey });
 
-    if (!channel && !core.getInput("channel_id")) {
-      core.setFailed(`You must provider either a 'channel' or a 'channel_id'.`);
-      return;
-    }
-
     const attachments = await buildSlackAttachments({
       status,
       color,
-      github,
+      github: {
+        ...github,
+        token: process.env.GITHUB_TOKEN,
+      },
       linearClient,
       environment,
+      defaultBranchName,
+      serviceName,
     });
-    const channelId =
-      core.getInput("channel_id") ||
-      (await lookUpChannelId({ slack, channel }));
-
-    if (!channelId) {
-      core.setFailed(`Slack channel ${channel} could not be found.`);
-      return;
-    }
+    const channelId = core.getInput("channel_id");
 
     const apiMethod = Boolean(messageId) ? "update" : "postMessage";
 
@@ -55,23 +49,3 @@ const { buildSlackAttachments, formatChannelName } = require("./src/utils");
     core.setFailed(error);
   }
 })();
-
-async function lookUpChannelId({ slack, channel }) {
-  let result;
-  const formattedChannel = formatChannelName(channel);
-
-  // Async iteration is similar to a simple for loop.
-  // Use only the first two parameters to get an async iterator.
-  for await (const page of slack.paginate("conversations.list", {
-    types: "public_channel, private_channel",
-  })) {
-    // You can inspect each page, find your result, and stop the loop with a `break` statement
-    const match = page.channels.find((c) => c.name === formattedChannel);
-    if (match) {
-      result = match.id;
-      break;
-    }
-  }
-
-  return result;
-}

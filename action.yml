@@ -4,17 +4,20 @@ branding:
   icon: message-square
   color: orange
 inputs:
-  channel:
-    description: "The Slack channel name. Required if no `channel_id` provided."
-    required: false
   channel_id:
-    description: "The Slack channel ID. Required if no `channel` provided."
-    required: false
+    description: "The Slack channel ID."
+    required: true
   status:
     description: "The status to list in the update."
     required: true
   environment:
     description: "The environment of the deploy."
+    required: true
+  service_name:
+    description: "Name of the service"
+    required: true
+  default_branch_name:
+    description: "The default branch in the repo."
     required: true
   color:
     description: "The color of the Slack attachment."
