@@ -11,6 +11,8 @@
   "dependencies": {
     "@actions/core": "^1.2.6",
     "@actions/github": "^6.0.0",
+    "@linear/sdk": "^23.0.0",
+    "@octokit/rest": "^21.0.0",
     "@slack/web-api": "^7.0.2"
   },
   "devDependencies": {

@@ -1,6 +1,7 @@
 const core = require("@actions/core");
 const github = require("@actions/github");
 const { WebClient } = require("@slack/web-api");
+const { LinearClient } = require("@linear/sdk");
 const { buildSlackAttachments, formatChannelName } = require("./src/utils");
 
 (async () => {
@@ -9,15 +10,24 @@ const { buildSlackAttachments, formatChannelName } = require("./src/utils");
     const status = core.getInput("status");
     const color = core.getInput("color");
     const messageId = core.getInput("message_id");
+    const environment = core.getInput("environment");
     const token = process.env.SLACK_BOT_TOKEN;
+    const linearApiKey = process.env.LINEAR_API_KEY;
     const slack = new WebClient(token);
+    const linearClient = new LinearClient({ apiKey: linearApiKey });
 
     if (!channel && !core.getInput("channel_id")) {
       core.setFailed(`You must provider either a 'channel' or a 'channel_id'.`);
       return;
     }
 
-    const attachments = buildSlackAttachments({ status, color, github });
+    const attachments = await buildSlackAttachments({
+      status,
+      color,
+      github,
+      linearClient,
+      environment,
+    });
     const channelId =
       core.getInput("channel_id") ||
       (await lookUpChannelId({ slack, channel }));

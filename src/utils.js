@@ -1,7 +1,33 @@
 const { context } = require("@actions/github");
 
-function buildSlackAttachments({ status, color, github }) {
-  const { payload, ref, workflow, eventName } = github.context;
+async function getLinearTicketInfo(linearClient, branch) {
+  const ticketIdMatch = branch.match(/^([a-zA-Z]+-\d+)/);
+  if (!ticketIdMatch) {
+    return null;
+  }
+
+  const ticketId = ticketIdMatch[1];
+  try {
+    const issue = await linearClient.issue(ticketId);
+    return {
+      id: issue.identifier,
+      url: issue.url,
+      title: issue.title,
+    };
+  } catch (error) {
+    console.error(`Error fetching Linear ticket: ${error.message}`);
+    return null;
+  }
+}
+
+async function buildSlackAttachments({
+  status,
+  color,
+  github,
+  linearClient,
+  environment,
+}) {
+  const { payload, ref, eventName } = github.context;
   const { owner, repo } = context.repo;
   const event = eventName;
   const branch =
@@ -9,11 +35,12 @@ function buildSlackAttachments({ status, color, github }) {
       ? payload.pull_request.head.ref
       : ref.replace("refs/heads/", "");
 
+  const linearTicketInfo = await getLinearTicketInfo(linearClient, branch);
+
   const sha =
     event === "pull_request"
       ? payload.pull_request.head.sha
       : github.context.sha;
-  const runId = parseInt(process.env.GITHUB_RUN_ID, 10);
 
   const referenceLink =
     event === "pull_request"
@@ -28,32 +55,47 @@ function buildSlackAttachments({ status, color, github }) {
           short: true,
         };
 
+  const environmentField = {
+    title: "Environment",
+    value:
+      environment.toLowerCase() === "prod"
+        ? `:warning: ${environment} :warning:`
+        : environment,
+    short: true,
+  };
+
+  // extract fields into a const
+  const fields = [
+    {
+      title: "Repo",
+      value: `<https://github.com/${owner}/${repo} | ${repo}>`,
+      short: true,
+    },
+    {
+      title: "Status",
+      value: status,
+      short: true,
+    },
+  ];
+
+  if (referenceLink) {
+    fields.push(referenceLink);
+  }
+
+  fields.push(environmentField);
+
+  if (linearTicketInfo) {
+    fields.push({
+      title: "Linear Ticket",
+      value: `<${linearTicketInfo.url} | ${linearTicketInfo.id}: ${linearTicketInfo.title}>`,
+      short: false,
+    });
+  }
+
   return [
     {
       color,
-      fields: [
-        {
-          title: "Repo",
-          value: `<https://github.com/${owner}/${repo} | ${owner}/${repo}>`,
-          short: true,
-        },
-        {
-          title: "Workflow",
-          value: `<https://github.com/${owner}/${repo}/actions/runs/${runId} | ${workflow}>`,
-          short: true,
-        },
-        {
-          title: "Status",
-          value: status,
-          short: true,
-        },
-        referenceLink,
-        {
-          title: "Event",
-          value: event,
-          short: true,
-        },
-      ],
+      fields,
       footer_icon: "https://github.githubassets.com/favicon.ico",
       footer: `<https://github.com/${owner}/${repo} | ${owner}/${repo}>`,
       ts: Math.floor(Date.now() / 1000),

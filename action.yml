@@ -13,6 +13,9 @@ inputs:
   status:
     description: "The status to list in the update."
     required: true
+  environment:
+    description: "The environment of the deploy."
+    required: true
   color:
     description: "The color of the Slack attachment."
     required: true
