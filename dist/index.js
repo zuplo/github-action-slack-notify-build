@@ -37573,7 +37573,7 @@ async function getPRsForCommits(
             number: pr.number,
             title: pr.title,
             url: pr.html_url,
-            user: pr.user,
+            username: pr.user.login,
             linearTickets: linearTicketInfos,
           });
         }
@@ -37637,14 +37637,16 @@ async function buildSlackAttachments({
     defaultBranchName,
   );
 
-  // const userIds = new Set(prs.map((pr) => pr.user.id));
-  // const users = await Promise.all(
-  //   Array.from(userIds).map(async (id) => {
-  //     const { data: user } = await octokit.users.getById({ id });
-  //     return { id, name: user.name || user.login };
-  //   }),
-  // );
-  // const userMap = new Map(users.map((user) => [user.id, user.name]));
+  const usernames = new Set(prs.map((pr) => pr.username));
+  const usernamesToNames = await Promise.all(
+    Array.from(usernames).map(async (username) => {
+      const { data: user } = await octokit.users.getByUsername({
+        username,
+      });
+      return [user.login, user.name];
+    }),
+  );
+  const usernameToNameMap = new Map(usernamesToNames);
 
   const fields = [
     {
@@ -37666,15 +37668,14 @@ async function buildSlackAttachments({
 
   if (prs.length > 0) {
     const prLines = prs.flatMap((pr) => {
-      // const userFirstName = pr.user.name.split(" ")[0];
+      const userFirstName =
+        usernameToNameMap.get(pr.username)?.split(" ")?.[0] || "";
       if (pr.linearTickets && pr.linearTickets.length > 0) {
         return pr.linearTickets.map((ticket) => {
-          // return `• *${ticket.id}* - <${ticket.url} | ${ticket.title}> (<${pr.url} | PR>) (${userFirstName})`;
-          return `• *${ticket.id}* - <${ticket.url} | ${ticket.title}> (<${pr.url} | PR>)`;
+          return `• *${ticket.id}* - <${ticket.url} | ${ticket.title}> (<${pr.url} | PR>) (${userFirstName})`;
         });
       } else {
-        // return `• *No ticket* - <${pr.url} | ${pr.title}> (${userFirstName})`;
-        return `• *No ticket* - <${pr.url} | ${pr.title}>`;
+        return `• *No ticket* - <${pr.url} | ${pr.title}> (${userFirstName})`;
       }
     });
 
