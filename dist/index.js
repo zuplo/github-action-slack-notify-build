@@ -37545,7 +37545,10 @@ async function getPRsForCommits(
         });
 
       for (const pr of pullRequests) {
-        if (pr.base.ref === defaultBranchName) {
+        if (
+          pr.base.ref === defaultBranchName ||
+          pr.base.ref.match(/^release-(patch|hotfix)-/)
+        ) {
           const linearTicketInfos = [];
           const branchTicketInfo = await getLinearTicketInfo(
             linearClient,
