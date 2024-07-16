@@ -124,11 +124,58 @@ async function getPRsForCommits(
               linearTicketInfos.push(additionalTicketInfo);
           }
 
+          let username = pr.user.login;
+          const titleIdMatch = pr.title.match(/\(#(\d+)\)$/);
+          if (titleIdMatch) {
+            const linkedPrNumber = parseInt(titleIdMatch[1], 10);
+            try {
+              const { data: linkedPr } = await octokit.pulls.get({
+                owner,
+                repo,
+                pull_number: linkedPrNumber,
+              });
+              username = linkedPr.user.login;
+              const linkedPrBranchTicketInfo = await getLinearTicketInfo(
+                linearClient,
+                linkedPr.head.ref,
+              );
+              if (
+                linkedPrBranchTicketInfo &&
+                !linearTicketInfos.some(
+                  (ticket) => ticket.id === linkedPrBranchTicketInfo.id,
+                )
+              ) {
+                linearTicketInfos.push(linkedPrBranchTicketInfo);
+              }
+              const linkedPrTitleAndBodyText = `${pr.title} ${pr.body}`;
+              const linkedPrTickets =
+                linkedPrTitleAndBodyText.match(/[a-zA-Z]+-\d+/g) || [];
+              for (const ticketId of linkedPrTickets) {
+                const additionalTicketInfo = await getLinearTicketInfo(
+                  linearClient,
+                  ticketId,
+                );
+                if (
+                  additionalTicketInfo &&
+                  !linearTicketInfos.some(
+                    (ticket) => ticket.id === additionalTicketInfo.id,
+                  )
+                ) {
+                  linearTicketInfos.push(additionalTicketInfo);
+                }
+              }
+            } catch (error) {
+              console.error(
+                `Error fetching linked PR #${linkedPrNumber}: ${error.message}`,
+              );
+            }
+          }
+
           prs.add({
             number: pr.number,
             title: pr.title,
             url: pr.html_url,
-            username: pr.user.login,
+            username,
             linearTickets: linearTicketInfos,
           });
         }
@@ -224,7 +271,7 @@ async function buildSlackAttachments({
   if (prs.length > 0) {
     const prLines = prs.flatMap((pr) => {
       const userFirstName =
-        usernameToNameMap.get(pr.username)?.split(" ")?.[0] || "";
+        usernameToNameMap.get(pr.username)?.split(" ")?.[0] || pr.username;
       if (pr.linearTickets && pr.linearTickets.length > 0) {
         return pr.linearTickets.map((ticket) => {
           return `• *${ticket.id}* - <${ticket.url} | ${ticket.title}> (<${pr.url} | PR>) (${userFirstName})`;
