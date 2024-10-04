@@ -1,6 +1,6 @@
 const { context } = require("@actions/github");
 
-function buildSlackAttachments({ status, color, github, service, workflow }) {
+function buildSlackAttachments({ status, color, github, service }) {
   const { payload, ref, workflow, eventName } = github.context;
   const { owner, repo } = context.repo;
   const event = eventName;

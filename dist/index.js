@@ -37774,7 +37774,7 @@ function wrappy (fn, cb) {
 
 const { context } = __nccwpck_require__(5438);
 
-function buildSlackAttachments({ status, color, github }) {
+function buildSlackAttachments({ status, color, github, service }) {
   const { payload, ref, workflow, eventName } = github.context;
   const { owner, repo } = context.repo;
   const event = eventName;
@@ -37791,16 +37791,24 @@ function buildSlackAttachments({ status, color, github }) {
 
   const referenceLink =
     event === "pull_request"
-      ? {
+      ? [
+        {
           title: "Pull Request",
           value: `<${payload.pull_request.html_url} | ${payload.pull_request.title}>`,
           short: true,
-        }
-      : {
-          title: "Branch",
-          value: `<https://github.com/${owner}/${repo}/commit/${sha} | ${branch}>`,
-          short: true,
-        };
+        },
+      ]
+      : [];
+
+  const serviceAttachment = service
+    ? [
+      {
+        title: "Service",
+        value: service,
+        short: true,
+      },
+    ]
+    : [];
 
   return [
     {
@@ -37821,7 +37829,13 @@ function buildSlackAttachments({ status, color, github }) {
           value: status,
           short: true,
         },
-        referenceLink,
+        ...referenceLink,
+        ...serviceAttachment,
+        {
+          title: "Branch",
+          value: `<https://github.com/${owner}/${repo}/commit/${sha} | ${branch}>`,
+          short: true,
+        },
         {
           title: "Event",
           value: event,
@@ -44131,6 +44145,7 @@ const { buildSlackAttachments, formatChannelName } = __nccwpck_require__(1608);
   try {
     const channel = core.getInput("channel");
     const status = core.getInput("status");
+    const service = core.getInput("service");
     const color = core.getInput("color");
     const messageId = core.getInput("message_id");
     const token = process.env.SLACK_BOT_TOKEN;
@@ -44141,7 +44156,12 @@ const { buildSlackAttachments, formatChannelName } = __nccwpck_require__(1608);
       return;
     }
 
-    const attachments = buildSlackAttachments({ status, color, github });
+    const attachments = buildSlackAttachments({
+      status,
+      color,
+      github,
+      service,
+    });
     const channelId =
       core.getInput("channel_id") ||
       (await lookUpChannelId({ slack, channel }));
