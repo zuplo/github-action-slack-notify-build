@@ -7,7 +7,8 @@ const { buildSlackAttachments, formatChannelName } = require("./src/utils");
   try {
     const channel = core.getInput("channel");
     const status = core.getInput("status");
-    const service = core.getInput("service");
+    const note = core.getInput("note_value");
+    const noteTitle = core.getInput("note_title");
     const color = core.getInput("color");
     const messageId = core.getInput("message_id");
     const token = process.env.SLACK_BOT_TOKEN;
@@ -22,7 +23,8 @@ const { buildSlackAttachments, formatChannelName } = require("./src/utils");
       status,
       color,
       github,
-      service,
+      note,
+      noteTitle,
     });
     const channelId =
       core.getInput("channel_id") ||

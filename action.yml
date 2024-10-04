@@ -17,9 +17,13 @@ inputs:
     description: "The color of the Slack attachment."
     required: true
     default: "#cccccc"
-  service:
-    description: "The name of the service."
-    required: true
+  note_value:
+    description: "An optional note to include in the Slack message."
+    required: false
+  note_title:
+    description: "An optional title for the note."
+    required: false
+    default: "Note"
   message_id:
     description: "The ID of the existing Slack message to update."
     required: false

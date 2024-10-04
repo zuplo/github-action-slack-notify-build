@@ -37774,7 +37774,7 @@ function wrappy (fn, cb) {
 
 const { context } = __nccwpck_require__(5438);
 
-function buildSlackAttachments({ status, color, github, service }) {
+function buildSlackAttachments({ status, color, github, note, noteTitle = 'Note' }) {
   const { payload, ref, workflow, eventName } = github.context;
   const { owner, repo } = context.repo;
   const event = eventName;
@@ -37800,11 +37800,11 @@ function buildSlackAttachments({ status, color, github, service }) {
       ]
       : [];
 
-  const serviceAttachment = service
+  const noteAttachment = note
     ? [
       {
-        title: "Service",
-        value: service,
+        title: noteTitle,
+        value: note,
         short: true,
       },
     ]
@@ -37830,7 +37830,7 @@ function buildSlackAttachments({ status, color, github, service }) {
           short: true,
         },
         ...referenceLink,
-        ...serviceAttachment,
+        ...noteAttachment,
         {
           title: "Branch",
           value: `<https://github.com/${owner}/${repo}/commit/${sha} | ${branch}>`,
@@ -44145,7 +44145,8 @@ const { buildSlackAttachments, formatChannelName } = __nccwpck_require__(1608);
   try {
     const channel = core.getInput("channel");
     const status = core.getInput("status");
-    const service = core.getInput("service");
+    const note = core.getInput("note_value");
+    const noteTitle = core.getInput("note_title");
     const color = core.getInput("color");
     const messageId = core.getInput("message_id");
     const token = process.env.SLACK_BOT_TOKEN;
@@ -44160,7 +44161,8 @@ const { buildSlackAttachments, formatChannelName } = __nccwpck_require__(1608);
       status,
       color,
       github,
-      service,
+      note,
+      noteTitle,
     });
     const channelId =
       core.getInput("channel_id") ||

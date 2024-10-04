@@ -1,6 +1,12 @@
 const { context } = require("@actions/github");
 
-function buildSlackAttachments({ status, color, github, service }) {
+function buildSlackAttachments({
+  status,
+  color,
+  github,
+  note,
+  noteTitle = "Note",
+}) {
   const { payload, ref, workflow, eventName } = github.context;
   const { owner, repo } = context.repo;
   const event = eventName;
@@ -26,11 +32,11 @@ function buildSlackAttachments({ status, color, github, service }) {
         ]
       : [];
 
-  const serviceAttachment = service
+  const noteAttachment = note
     ? [
         {
-          title: "Service",
-          value: service,
+          title: noteTitle,
+          value: note,
           short: true,
         },
       ]
@@ -56,7 +62,7 @@ function buildSlackAttachments({ status, color, github, service }) {
           short: true,
         },
         ...referenceLink,
-        ...serviceAttachment,
+        ...noteAttachment,
         {
           title: "Branch",
           value: `<https://github.com/${owner}/${repo}/commit/${sha} | ${branch}>`,
